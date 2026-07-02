@@ -41,7 +41,8 @@ module bitonic_sort #(
 	parameter CHAN_NUM = 8,		// 
 	parameter DIR = 0,			// 0 - ascending, 1 - descending
 	parameter SIGNED = 0,		// 0 - unsigned, 1 - signed
-	parameter PIPE_REG = 1		// pipeline bypass, enable each N-th out reg 
+	parameter PIPE_REG = 1,		// pipeline bypass, enable each N-th out reg 
+	parameter MAXOUT_NUM = 4
 )
 (
 	input wire clk,
@@ -76,21 +77,30 @@ generate for (stage = 0; stage < STAGES; stage = stage + 1) begin: SORT_STAGE
 	assign stage_data[stage + 1] = stage_data_out;
 
 	for (block = 0; block < BLOCKS; block = block + 1) begin: BLOCK
-		localparam BLOCK_DATA_WIDTH = DATA_WIDTH*2**(BLOCK_ORDER+1);
-		localparam BLOCK_POLARITY = DIR ? (~block & 1) : (block & 1);
+		localparam BLOCK_DATA_WIDTH     = 2**(BLOCK_ORDER+1)*DATA_WIDTH;
+		localparam BLOCK_IN_CHAN_NUM    = 2**(BLOCK_ORDER+1) > 2*MAXOUT_NUM ? 2*MAXOUT_NUM : 2**(BLOCK_ORDER+1);
+		localparam BLOCK_OUT_CHAN_NUM   = 2**(BLOCK_ORDER+1) >   MAXOUT_NUM ? MAXOUT_NUM   : 2**(BLOCK_ORDER+1);
+		localparam BLOCK_IN_DATA_WIDTH  = DATA_WIDTH*BLOCK_IN_CHAN_NUM;
+		localparam BLOCK_OUT_DATA_WIDTH = DATA_WIDTH*BLOCK_OUT_CHAN_NUM;
+		localparam BLOCK_POLARITY = (block & 1);
+		localparam BLOCK_DIR = DIR ^ BLOCK_POLARITY;
 			
-		wire [BLOCK_DATA_WIDTH-1:0]block_data_in;
-		wire [BLOCK_DATA_WIDTH-1:0]block_data_out;
+		wire [ BLOCK_IN_DATA_WIDTH-1:0]block_data_in;
+		wire [BLOCK_OUT_DATA_WIDTH-1:0]block_data_out;
 			
-		assign block_data_in = stage_data_in[BLOCK_DATA_WIDTH*(block+1)-1-:BLOCK_DATA_WIDTH];
-		assign stage_data_out[BLOCK_DATA_WIDTH*(block+1)-1-:BLOCK_DATA_WIDTH] = block_data_out;
+		assign block_data_in = BLOCK_POLARITY ? stage_data_in[BLOCK_IN_DATA_WIDTH*(block  )  +:BLOCK_IN_DATA_WIDTH]
+											  : stage_data_in[BLOCK_IN_DATA_WIDTH*(block+1)-1-:BLOCK_IN_DATA_WIDTH];
+		assign stage_data_out[BLOCK_DATA_WIDTH*(block)+:BLOCK_DATA_WIDTH] = BLOCK_POLARITY ? {{BLOCK_DATA_WIDTH-BLOCK_IN_DATA_WIDTH{1'b0}}, block_data_out}
+																						   : {block_data_out, {BLOCK_DATA_WIDTH-BLOCK_IN_DATA_WIDTH{1'b0}}};
 		
 		bitonic_block #(
 			.DATA_WIDTH(DATA_WIDTH),
 			.ORDER(BLOCK_ORDER),
 			.POLARITY(BLOCK_POLARITY),
+			.DIR(BLOCK_DIR),
 			.SIGNED(SIGNED),
-			.PIPE_REG(PIPE_REG)
+			.PIPE_REG(PIPE_REG),
+			.MAXOUT_NUM(MAXOUT_NUM)
 		) bitonic_block_inst (
 			.clk(clk),
 			.data_in(block_data_in),

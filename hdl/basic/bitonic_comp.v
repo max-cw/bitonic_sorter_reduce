@@ -38,7 +38,7 @@
 
 module bitonic_comp #(
 	parameter DATA_WIDTH = 16,
-	parameter POLARITY = 0,
+	parameter DIR = 0,
 	parameter SIGNED = 0,
 	parameter REGOUT_EN = 0
 )
@@ -62,7 +62,7 @@ generate
 		assign LESS = $signed(A) < $signed(B);
 	end
 	
-	if (POLARITY == 0) begin
+	if (DIR == 0) begin
 		always @(*) begin
 			H_REG = (LESS) ? A : B;
 			L_REG = (LESS) ? B : A;

@@ -39,7 +39,7 @@
 module bitonic_node #(
 	parameter DATA_WIDTH = 16,
 	parameter ORDER = 0,
-	parameter POLARITY = 0,
+	parameter DIR = 0,
 	parameter SIGNED = 0,
 	parameter PIPE_REG = 1,
 	parameter INDEX = 0
@@ -68,7 +68,7 @@ generate for (i = 0; i < COMP_NUM; i = i + 1) begin: COMP
 
 	bitonic_comp #(
 		.DATA_WIDTH(DATA_WIDTH),
-		.POLARITY(POLARITY),
+		.DIR(DIR),
 		.SIGNED(SIGNED),
 		.REGOUT_EN(REGOUT_EN)
 	) comp_inst (
