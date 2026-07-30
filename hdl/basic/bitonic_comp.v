@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // Company: 
-// Engineer: Dmitry Matyunin (https://github.com/mcjtag)
+// Engineer: Chaowaroj (Max) Wanotayaroj (https://github.com/max-cw)
 // 
 // Create Date: 05.02.2018 14:00:10
 // Design Name: 
@@ -15,6 +15,7 @@
 // Revision 0.01 - File Created
 // Additional Comments:
 // License: MIT
+//  Copyright (c) 2026 Chaowaroj Wanotayaroj
 //  Copyright (c) 2019 Dmitry Matyunin
 //  Permission is hereby granted, free of charge, to any person obtaining a copy
 //  of this software and associated documentation files (the "Software"), to deal
@@ -38,6 +39,7 @@
 
 module bitonic_comp #(
 	parameter DATA_WIDTH = 16,
+	parameter KEY_WIDTH = DATA_WIDTH, //Restrict comparator to KEY_WIDTH MSB's
 	parameter DIR = 0,
 	parameter SIGNED = 0,
 	parameter REGOUT_EN = 0
@@ -57,9 +59,9 @@ wire LESS;
 
 generate
 	if (SIGNED == 0) begin
-		assign LESS = $unsigned(A) < $unsigned(B);	
+		assign LESS = $unsigned(A[DATA_WIDTH-1 -:KEY_WIDTH]) < $unsigned(B[DATA_WIDTH-1 -:KEY_WIDTH]);	
 	end else begin
-		assign LESS = $signed(A) < $signed(B);
+		assign LESS = $signed(A[DATA_WIDTH-1 -:KEY_WIDTH]) < $signed(B[DATA_WIDTH-1 -:KEY_WIDTH]);
 	end
 	
 	if (DIR == 0) begin

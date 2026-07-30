@@ -1,3 +1,15 @@
+# bitonic_sorter_reduce
+Based on Matyunin's [bitonic_sorter](https://github.com/mcjtag/bitonic_sorter), several features were added for my needs
+- Optimize the sorting network with reduced number of outputs
+- Indicate a subset of data MSBs as key for sorting and ignore the rest
+  - bitonic_sort_index_sv will append index bits to the key and only build the sorting network with just them. The full output will be retrieved after the sort
+    - There is an option to make the index part of the key. Use to mimic a stable sorting algorithm
+- SystemVerilog wrapper for using array with input/output ports
+
+## Reduced Network Example
+Sorting network with 32 input channels and 4 output channels
+![Bitonic Sorter Reduce](/img/bitonic_reduce.jpg)
+
 # bitonic_sorter
 Bitonic sorter (Batcher's sorting network) written in Verilog, parameterizable and fully pipelined*.
 Two interfaces available: basic interface and AXI-Stream.

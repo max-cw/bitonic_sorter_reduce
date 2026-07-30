@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // Company: 
-// Engineer: Dmitry Matyunin (https://github.com/mcjtag)
+// Engineer: Chaowaroj (Max) Wanotayaroj (https://github.com/max-cw)
 // 
 // Create Date: 10.02.2018 13:22:07
 // Design Name: 
@@ -15,6 +15,7 @@
 // Revision 0.01 - File Created
 // Additional Comments:
 // License: MIT
+//  Copyright (c) 2026 Chaowaroj Wanotayaroj
 //  Copyright (c) 2019 Dmitry Matyunin
 //  Permission is hereby granted, free of charge, to any person obtaining a copy
 //  of this software and associated documentation files (the "Software"), to deal
@@ -38,6 +39,7 @@
 
 module bitonic_block #(
 	parameter DATA_WIDTH = 16,
+	parameter KEY_WIDTH = DATA_WIDTH, //Restrict comparator to KEY_WIDTH MSB's
 	parameter ORDER = 0,
 	parameter POLARITY = 0,
 	parameter DIR = 0,
@@ -50,11 +52,12 @@ module bitonic_block #(
 )
 (
 	input wire clk,
-	input wire [DATA_WIDTH*IN_NUM-1:0]data_in,
-	output wire [DATA_WIDTH*OUT_NUM-1:0]data_out
+	input wire [DATA_WIDTH*2**(ORDER+1)-1:0]data_in,
+	output wire [DATA_WIDTH*2**(ORDER+1)-1:0]data_out
 );
 
-localparam STAGES = ORDER + 1;
+localparam STAGES = ORDER+1;
+localparam STAGE_DATA_WIDTH = DATA_WIDTH*2**(ORDER+1);
 localparam STAGE_IN_DATA_WIDTH = DATA_WIDTH*IN_NUM;
 localparam STAGE_OUT_DATA_WIDTH = DATA_WIDTH*OUT_NUM;
 
@@ -74,7 +77,7 @@ endfunction
 wire [DATA_WIDTH*2**(ORDER+1)-1:0]stage_data[STAGES:0];
 
 assign stage_data[0] = data_in;
-assign data_out = POLARITY==0 ? stage_data[STAGES][0+: DATA_WIDTH*OUT_NUM] : stage_data[STAGES][DATA_WIDTH*IN_NUM-1-: DATA_WIDTH*OUT_NUM];
+assign data_out = stage_data[STAGES];
 
 genvar stage;
 genvar node;
@@ -84,47 +87,75 @@ generate for (stage = 0; stage < STAGES; stage = stage + 1) begin: BLOCK_STAGE
 	localparam NODE_ORDER = STAGES - stage - 1;
 	localparam NODE_OUT_NUM = 2**(NODE_ORDER+1);
 	localparam NODES = $rtoi($ceil($itor(OUT_NUM) / NODE_OUT_NUM));
-	localparam NODES_REMOVED = NODES_FULL-NODES;
+	localparam NODE_SKIP = NODE_OUT_NUM >= 4*MAXOUT_NUM;
 		
-	wire [STAGE_IN_DATA_WIDTH-1:0]stage_data_in;
-	wire [STAGE_OUT_DATA_WIDTH-1:0]stage_data_out;
+	wire [STAGE_DATA_WIDTH-1:0]stage_data_in;
+	wire [STAGE_DATA_WIDTH-1:0]stage_data_out;
 		
 	assign stage_data_in = stage_data[stage];
 	assign stage_data[stage + 1] = 	stage_data_out;
-	// assign stage_data_out[BLOCK_DATA_WIDTH*(block)+:BLOCK_DATA_WIDTH] = BLOCK_POLARITY ? {{BLOCK_DATA_WIDTH-BLOCK_IN_DATA_WIDTH{1'b0}}, block_data_out}
-	// 																					: {block_data_out, {BLOCK_DATA_WIDTH-BLOCK_IN_DATA_WIDTH{1'b0}}};
 
-	localparam NODES_START	= POLARITY==0 ? 0 : NODES_FULL-1;
-	localparam NODES_END	= POLARITY==0 ? NODES : NODES_REMOVED-1;
-	for (node = NODES_START; node != NODES_END; node = POLARITY==0 ? node+1 : node-1) begin: NODE
+	for (node = 0; node < NODES_FULL; node = node + 1) begin: NODE
+		localparam NODE_REMOVE = POLARITY==0 ? node >= NODES : node < (NODES_FULL-NODES);
+		localparam INDEX = index(ORDER, stage);
+		//Same as REGOUT_EN for node module. Use to pipeline match when SKIP/REMOVE nodes
+		localparam NODEREG_EN = ((PIPE_REG == 0) ? 0 : ((INDEX % PIPE_REG) == 0)) && (NODE_SKIP==1 || NODE_REMOVE==1);
 		localparam NODE_DATA_WIDTH = DATA_WIDTH*NODE_OUT_NUM;
 		wire [NODE_DATA_WIDTH-1:0]node_data_in;
-		wire [NODE_DATA_WIDTH-1:0]node_data_out;
+		reg  [NODE_DATA_WIDTH-1:0]node_data_out;
+		wire  [NODE_DATA_WIDTH-1:0]node_data_temp;
 			
 		assign node_data_in = stage_data_in[NODE_DATA_WIDTH*(node + 1)-1-:NODE_DATA_WIDTH];
-
-		localparam NODE_COUNT = POLARITY==0 ? node+1 : NODES_FULL - node;
-		localparam NODE_OUT_NUM_USE = NODE_COUNT*NODE_OUT_NUM <= OUT_NUM ? NODE_OUT_NUM : NODE_COUNT*NODE_OUT_NUM-OUT_NUM;
-		wire [DATA_WIDTH*NODE_OUT_NUM_USE-1:0] node_data_use;
-		localparam NODE_OUT_INDEX = POLARITY==0 ? node : node - NODES_REMOVED;
-		assign node_data_use = POLARITY==0	? node_data_out[0                +: DATA_WIDTH*NODE_OUT_NUM_USE]
-											: node_data_out[NODE_DATA_WIDTH-1-: DATA_WIDTH*NODE_OUT_NUM_USE];
-		assign stage_data_out[NODE_DATA_WIDTH*(NODE_OUT_INDEX)+: DATA_WIDTH*NODE_OUT_NUM_USE] = node_data_use;
-		// assign stage_data_out[BLOCK_DATA_WIDTH*(block)+:BLOCK_DATA_WIDTH] = BLOCK_POLARITY ? {{BLOCK_DATA_WIDTH-BLOCK_IN_DATA_WIDTH{1'b0}}, block_data_out}
-		// 																					: {block_data_out, {BLOCK_DATA_WIDTH-BLOCK_IN_DATA_WIDTH{1'b0}}};
+		assign stage_data_out[NODE_DATA_WIDTH*(node + 1)-1-:NODE_DATA_WIDTH] = node_data_out;
 			
-		bitonic_node #(
-			.DATA_WIDTH(DATA_WIDTH),
-			.ORDER(NODE_ORDER),
-			.DIR(DIR),
-			.SIGNED(SIGNED),
-			.PIPE_REG(PIPE_REG),
-			.INDEX(index(ORDER, stage))
-		) bitonic_node_inst (
-			.clk(clk),
-			.data_in(node_data_in),
-			.data_out(node_data_out)
-		);		
+		if (NODE_SKIP) begin
+			//Input > 2*MAXOUT_NUM. Skip the comparison node and
+			//instead move the top candidates from each half
+
+			//Next stage output number per node. Should be half the current one
+			localparam NODE_OUT_NUM_NEXT = 2**(NODE_ORDER);
+			if (POLARITY==0) begin
+			assign 	node_data_temp[0 +: DATA_WIDTH*NODE_OUT_NUM_NEXT/2]
+					= node_data_in[0 +: DATA_WIDTH*NODE_OUT_NUM_NEXT/2];
+			assign 	node_data_temp[DATA_WIDTH*NODE_OUT_NUM_NEXT-1 -: DATA_WIDTH*NODE_OUT_NUM_NEXT/2]
+					= node_data_in[NODE_DATA_WIDTH-1 -: DATA_WIDTH*NODE_OUT_NUM_NEXT/2];
+			assign node_data_temp[DATA_WIDTH*NODE_OUT_NUM_NEXT +: DATA_WIDTH*NODE_OUT_NUM_NEXT]
+					= {DATA_WIDTH*NODE_OUT_NUM_NEXT{1'bz}};
+			end
+			else begin
+				assign node_data_temp[0 +: DATA_WIDTH*NODE_OUT_NUM_NEXT]
+						= {DATA_WIDTH*NODE_OUT_NUM_NEXT{1'bz}};
+				assign 	node_data_temp[DATA_WIDTH*NODE_OUT_NUM_NEXT +: DATA_WIDTH*NODE_OUT_NUM_NEXT/2]
+						= node_data_in[0+: DATA_WIDTH*NODE_OUT_NUM_NEXT/2];
+				assign 	node_data_temp[NODE_DATA_WIDTH-1 -: DATA_WIDTH*NODE_OUT_NUM_NEXT/2]
+						= node_data_in[NODE_DATA_WIDTH-1 -: DATA_WIDTH*NODE_OUT_NUM_NEXT/2];
+			end
+		end
+		else if (NODE_REMOVE) begin
+			//Not efficient if MAXOUT_NUM is not an exact power of 2. In that case,
+			//some comparators from the "partially used" node can be removed.
+			assign node_data_temp = node_data_in;
+		end
+		else begin
+			bitonic_node #(
+				.DATA_WIDTH(DATA_WIDTH),
+				.KEY_WIDTH(KEY_WIDTH),
+				.ORDER(NODE_ORDER),
+				.DIR(DIR),
+				.SIGNED(SIGNED),
+				.PIPE_REG(PIPE_REG),
+				.INDEX(INDEX)
+			) bitonic_node_inst (
+				.clk(clk),
+				.data_in(node_data_in),
+				.data_out(node_data_temp)
+			);
+		end
+
+		if (NODEREG_EN) begin
+			always @(posedge clk) node_data_out <= node_data_temp;
+		end
+		else always @(*) node_data_out = node_data_temp;
 	end
 end endgenerate
 

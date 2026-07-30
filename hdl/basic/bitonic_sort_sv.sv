@@ -3,20 +3,19 @@
 // Company: 
 // Engineer: Chaowaroj (Max) Wanotayaroj (https://github.com/max-cw)
 // 
-// Create Date: 10.02.2018 12:29:58
+// Create Date: 03.07.2026
 // Design Name: 
-// Module Name: bitonic_node
+// Module Name: bitonic_sort
 // Project Name: bitonic_sort
 // Target Devices:
 // Tool Versions:
-// Description:
+// Description: Simple SystemVerilog wrapper to use unpacked array ports
 // Dependencies:
 // Revision:
 // Revision 0.01 - File Created
 // Additional Comments:
 // License: MIT
 //  Copyright (c) 2026 Chaowaroj Wanotayaroj
-//  Copyright (c) 2019 Dmitry Matyunin
 //  Permission is hereby granted, free of charge, to any person obtaining a copy
 //  of this software and associated documentation files (the "Software"), to deal
 //  in the Software without restriction, including without limitation the rights
@@ -37,50 +36,49 @@
 // 
 //////////////////////////////////////////////////////////////////////////////////
 
-module bitonic_node #(
-	parameter DATA_WIDTH = 16,
-	parameter KEY_WIDTH = DATA_WIDTH, //Restrict comparator to KEY_WIDTH MSB's
-	parameter ORDER = 0,
-	parameter DIR = 0,
-	parameter SIGNED = 0,
-	parameter PIPE_REG = 1,
-	parameter INDEX = 0
+module bitonic_sort_sv #(
+	parameter int DATA_WIDTH = 16,	//
+	parameter int KEY_WIDTH = DATA_WIDTH,
+	parameter int CHAN_NUM = 8,		//
+	parameter int OUT_NUM = CHAN_NUM,// Output needed
+	parameter int DIR = 0,			// 0 - ascending, 1 - descending
+	parameter int SIGNED = 0,		// 0 - unsigned, 1 - signed
+	parameter int PIPE_REG = 1,		// pipeline bypass, enable each N-th out reg
+	parameter bit REG_IN = '0
 )
 (
-	input wire clk,
-	input wire [DATA_WIDTH*2**(ORDER+1)-1:0]data_in,
-	output wire [DATA_WIDTH*2**(ORDER+1)-1:0]data_out
+	input logic clk,
+	input logic [DATA_WIDTH-1:0]data_in[CHAN_NUM],
+	output logic [DATA_WIDTH-1:0]data_out[OUT_NUM]
 );
 
-localparam COMP_NUM = 2**ORDER;
-localparam REGOUT_EN = (PIPE_REG == 0) ? 0 : ((INDEX % PIPE_REG) == 0);
+	logic [DATA_WIDTH*CHAN_NUM-1:0]data_in_packed;
+	for (genvar i=0; i < CHAN_NUM; i++) begin
+		if (REG_IN)
+			always_ff @(posedge clk) data_in_packed[DATA_WIDTH*i +: DATA_WIDTH] <= data_in[i];
+		else
+			assign data_in_packed[DATA_WIDTH*i +: DATA_WIDTH] = data_in[i];
+	end
+	logic [DATA_WIDTH*OUT_NUM-1:0]data_out_packed;
+	for (genvar i=0; i < OUT_NUM; i++) begin
+		// if (REG_IN)
+		// 	always_ff @(posedge clk) data_out[i] <= data_out_packed[DATA_WIDTH*i +:DATA_WIDTH];
+		// else
+			assign data_out[i] = data_out_packed[DATA_WIDTH*i +:DATA_WIDTH];
+	end
 
-genvar i;
-
-generate for (i = 0; i < COMP_NUM; i = i + 1) begin: COMP
-	wire [DATA_WIDTH-1:0]A;
-	wire [DATA_WIDTH-1:0]B;
-	wire [DATA_WIDTH-1:0]H;
-	wire [DATA_WIDTH-1:0]L;
-	
-	assign A = data_in[DATA_WIDTH*(i + 1 + COMP_NUM * 0)-1-:DATA_WIDTH];
-	assign B = data_in[DATA_WIDTH*(i + 1 + COMP_NUM * 1)-1-:DATA_WIDTH];
-	assign data_out[DATA_WIDTH*(i + 1 + COMP_NUM * 0)-1-:DATA_WIDTH] = H;
-	assign data_out[DATA_WIDTH*(i + 1 + COMP_NUM * 1)-1-:DATA_WIDTH] = L;
-
-	bitonic_comp #(
+	bitonic_sort #(
 		.DATA_WIDTH(DATA_WIDTH),
 		.KEY_WIDTH(KEY_WIDTH),
+		.CHAN_NUM(CHAN_NUM),
+		.OUT_NUM(OUT_NUM),
 		.DIR(DIR),
 		.SIGNED(SIGNED),
-		.REGOUT_EN(REGOUT_EN)
-	) comp_inst (
-		.CLK(clk),
-		.A(A),
-		.B(B),
-		.H(H),
-		.L(L)
+		.PIPE_REG(PIPE_REG)
+	) bitonic_sort_inst (
+		.clk(clk),
+		.data_in(data_in_packed),
+		.data_out(data_out_packed)
 	);
-end endgenerate
 
 endmodule
